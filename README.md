@@ -4,6 +4,7 @@
 
 This project aims to develop a parallel system for clustering and performing efficient nearest neighbor (NN) searches on high-dimensional data using KD-Trees or Ball Trees. The system will be fully implemented in C++ and designed for shared-memory parallelism.
 
+Google Doc: https://docs.google.com/document/d/1OMdeZtnvKImjsmKK4mV8en7d_ntYKo8lF7ty2kFxyRQ/edit?pli=1&tab=t.xgjg7v2dpjin
 ---
 
 ## Objectives
