@@ -37,7 +37,7 @@ Google Doc: https://docs.google.com/document/d/1OMdeZtnvKImjsmKK4mV8en7d_ntYKo8l
 ### Basic Type Definitions (in C++)
 
 ```cpp
-using Point = std::vector<double>;
+using Point = std::vector<std::vector<double>>;
 using Dataset = std::vector<Point>;
 ```
 
