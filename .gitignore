@@ -1,0 +1,8 @@
+local_data/
+.vscode/
+hello_world.cpp
+hello_world
+local_notes_syed.txt
+*.dSYM
+test_clustering
+
