@@ -13,7 +13,6 @@
 #include <queue>
 #include <atomic>
 
-
 // --- Function to read example points from CSV ---
 Dataset readCSV(const std::string& filename) {
     Dataset dataset;
@@ -85,9 +84,9 @@ std::pair<std::vector<Cluster>, parlay::sequence<int>> parallelDBSCAN(
 
             auto neighbors = regionQuery(data, p, eps);
 
-            if (neighbors.size() >= minPts) {
+            if (neighbors.size() >= static_cast<size_t>(minPts)) {
                 for (int nIdx : neighbors) {
-                    int expected = -1;
+                    // int expected = -1;
                     if (labels[nIdx] == -1) {
                         labels[nIdx] = currentClusterId;
                         q.push(nIdx);
@@ -102,7 +101,7 @@ std::pair<std::vector<Cluster>, parlay::sequence<int>> parallelDBSCAN(
 
         auto neighbors = regionQuery(data, i, eps);
 
-        if (neighbors.size() < minPts) {
+        if (neighbors.size() < static_cast<size_t>(minPts)) {
             labels[i] = -2; // noise
         } else {
             int id = clusterId.fetch_add(1);
@@ -147,24 +146,24 @@ void writeClusteredPointsToCSV(const std::string& filename,
 }
 
 // --- Main ---
-int main() {
-    std::string filename = "/Users/syedrizvi/Desktop/Life/Yale/Courses/04_Spring_2025/CPSC424/Final_Project/cpsc524FinalProject/example_data/sample2d.csv";
+// int main() {
+//     std::string filename = "/Users/syedrizvi/Desktop/Life/Yale/Courses/04_Spring_2025/CPSC424/Final_Project/cpsc524FinalProject/example_data/sample2d.csv";
 
-    Dataset data = readCSV(filename);
-    std::cout << "Loaded " << data.n << " points.\n";
+//     Dataset data = readCSV(filename);
+//     std::cout << "Loaded " << data.n << " points.\n";
 
-    double eps = 0.2;  // 0.2
-    int minNeighbors = 10;
-    std::cout << "Testing parallel DBSCAN with eps = " << eps << " and minNeighbors = " << minNeighbors << ".\n";
-    auto [clusters, labels] = parallelDBSCAN(data, eps, minNeighbors);
-    std::cout << "Clustered into " << clusters.size() << " clusters.\n";
+//     double eps = 0.2;  // 0.2
+//     int minNeighbors = 10;
+//     std::cout << "Testing parallel DBSCAN with eps = " << eps << " and minNeighbors = " << minNeighbors << ".\n";
+//     auto [clusters, labels] = parallelDBSCAN(data, eps, minNeighbors);
+//     std::cout << "Clustered into " << clusters.size() << " clusters.\n";
 
-    for (int i = 0; i < clusters.size(); ++i) {
-        std::cout << "Cluster " << i << ": " << clusters[i].points.n << " points\n";
-    }
+//     for (int i = 0; i < clusters.size(); ++i) {
+//         std::cout << "Cluster " << i << ": " << clusters[i].points.n << " points\n";
+//     }
 
-    // Write clustered points to CSV
-    writeClusteredPointsToCSV("example_data/clustered_points.csv", data, labels);
+//     // Write clustered points to CSV
+//     writeClusteredPointsToCSV("example_data/clustered_points.csv", data, labels);
 
-    return 0;
-}
+//     return 0;
+// }
