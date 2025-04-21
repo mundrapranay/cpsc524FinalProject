@@ -6,3 +6,7 @@ local_notes_syed.txt
 *.dSYM
 test_clustering
 parallel_dbscan
+*.o
+dbscan_clustering
+test_kdtree.cpp
+test_kdtree
