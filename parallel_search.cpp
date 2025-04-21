@@ -188,7 +188,9 @@ std::vector<const Point*> parallelNearestNeighborQuery(
     result.reserve(std::min(neighbors.size(), K));
     for (auto &n : neighbors) {
       if (std::find(result.begin(), result.end(), n.pt) == result.end()) {
-        result.push_back(n.pt);
+        if (n.dist != std::numeric_limits<double>::infinity()) {
+            result.push_back(n.pt);
+        }
         if (result.size() == K) break;
       }
     }
