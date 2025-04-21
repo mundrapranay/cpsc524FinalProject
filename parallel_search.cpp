@@ -29,28 +29,76 @@ static double sqDist(const Point &a, const Point &b) {
     return d;
 }
 
+// class ConcurrentMaxHeap {
+//     std::priority_queue<Neighbor, std::vector<Neighbor>, NeighborCompare> heap;
+//     std::mutex mtx;
+//     size_t maxSize;
+
+// public:
+//     ConcurrentMaxHeap(size_t K) : maxSize(K) {}
+    
+//     void pushCandidate(Neighbor cand) {
+//         std::lock_guard<std::mutex> lock(mtx);
+//         if (heap.size() < maxSize) {
+//             heap.push(cand);
+//         } else if (cand.dist < heap.top().dist) {
+//             heap.pop();
+//             heap.push(cand);
+//         }
+//     }
+
+//     double worstDist() {
+//         std::lock_guard<std::mutex> lock(mtx);
+//         if (heap.size() < maxSize) return std::numeric_limits<double>::infinity();
+//         return heap.top().dist;
+//     }
+
+//     std::vector<Neighbor> getAll() {
+//         std::lock_guard<std::mutex> lock(mtx);
+//         std::vector<Neighbor> out;
+//         out.reserve(heap.size());
+//         while (!heap.empty()) {
+//             out.push_back(heap.top());
+//             heap.pop();
+//         }
+//         return out;
+//     }
+// };
+
 class ConcurrentMaxHeap {
     std::priority_queue<Neighbor, std::vector<Neighbor>, NeighborCompare> heap;
+    std::unordered_set<const Point*> seen;
     std::mutex mtx;
     size_t maxSize;
 
 public:
-    ConcurrentMaxHeap(size_t K) : maxSize(K) {}
-    
+    ConcurrentMaxHeap(size_t K) 
+      : maxSize(K) {}
+
     void pushCandidate(Neighbor cand) {
         std::lock_guard<std::mutex> lock(mtx);
+        // 1) skip if already seen
+        if (seen.count(cand.pt)) return;
+
         if (heap.size() < maxSize) {
             heap.push(cand);
+            seen.insert(cand.pt);
         } else if (cand.dist < heap.top().dist) {
+            // evict the worst
+            const Point* worstPt = heap.top().pt;
             heap.pop();
+            seen.erase(worstPt);
+            // insert the new candidate
             heap.push(cand);
+            seen.insert(cand.pt);
         }
     }
 
     double worstDist() {
         std::lock_guard<std::mutex> lock(mtx);
-        if (heap.size() < maxSize) return std::numeric_limits<double>::infinity();
-        return heap.top().dist;
+        return (heap.size() < maxSize)
+               ? std::numeric_limits<double>::infinity()
+               : heap.top().dist;
     }
 
     std::vector<Neighbor> getAll() {
