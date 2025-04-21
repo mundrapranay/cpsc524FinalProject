@@ -213,7 +213,7 @@ std::vector<const Point*> parallelNearestNeighborQuery(
       return std::make_pair(sqDist(rp, query), i);
     });
 
-    // 2) Remove the infinite‐distance entries (no tree)
+    // 2) Filter out empty clusters
     auto rootDists = parlay::remove_if(rootDistsAll, [&](auto &pr) {
       return pr.first == std::numeric_limits<double>::infinity();
     });
@@ -223,31 +223,29 @@ std::vector<const Point*> parallelNearestNeighborQuery(
       return a.first < b.first;
     });
 
-    // 4) Clamp to at most P real clusters
+    // 4) Clamp to at most P clusters
     size_t P2 = std::min(P, sorted.size());
 
-    // 5) Shared concurrent max‐heap
+    // 5) Shared concurrent max-heap for the top-K candidates
     ConcurrentMaxHeap globalHeap(K);
 
-    // 6) Parallel search top‐P2 real trees
+    // 6) Parallel search the top-P2 trees
     parlay::parallel_for(0, P2, [&](size_t t) {
       size_t idx = sorted[t].second;
       const Dataset &ds = clusters[idx].points;
       searchKDTree(ds.kdtree, ds, query, globalHeap);
     });
 
-    // 7) Extract, sort and collect up to K distinct points
+    // 7) Extract all candidates, sort them ascending
     auto neighbors = globalHeap.getAll();
     std::sort(neighbors.begin(), neighbors.end(),
               [&](auto &a, auto &b){ return a.dist < b.dist; });
 
+    // 8) Simply take the first K (no dedupe)
     std::vector<const Point*> result;
     result.reserve(std::min(neighbors.size(), K));
-    for (auto &n : neighbors) {
-      if (std::find(result.begin(), result.end(), n.pt) == result.end()) {
-        result.push_back(n.pt);
-        if (result.size() == K) break;
-      }
+    for (size_t i = 0; i < neighbors.size() && result.size() < K; ++i) {
+      result.push_back(neighbors[i].pt);
     }
     return result;
 }
