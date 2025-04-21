@@ -98,6 +98,52 @@ void searchKDTree(KDNode* node, const Dataset &ds, const Point &query, Concurren
 // query: the query point
 // K: number of nearest neighbors to return
 // P: number of top-priority trees to search
+// std::vector<const Point*> parallelNearestNeighborQuery(
+//     const parlay::sequence<Cluster> &clusters,
+//     const Point &query,
+//     size_t K,
+//     size_t P)
+// {
+//     size_t C = clusters.size();
+
+//     // 1) Compute (distance, index) for each cluster root
+//     auto rootDists = parlay::tabulate(C, [&](size_t i) {
+//       KDNode *root = clusters[i].points.kdtree;
+//       if (!root) return std::make_pair(std::numeric_limits<double>::infinity(), i);
+//       const Point &rp = clusters[i].points.points[root->pointIndex];
+//       return std::make_pair(sqDist(rp, query), i);
+//     });
+
+//     // 2) Sort by distance
+//     auto sorted = parlay::sort(rootDists, [&](auto &a, auto &b){
+//       return a.first < b.first;
+//     });
+
+//     // 3) Clamp P to available clusters
+//     size_t P2 = std::min(P, sorted.size());
+
+//     // 4) Shared concurrent max-heap
+//     ConcurrentMaxHeap globalHeap(K);
+
+//     // 5) Parallel search top-P trees
+//     parlay::parallel_for(0, P2, [&](size_t t) {
+//       size_t idx = sorted[t].second;
+//       const Dataset &ds = clusters[idx].points;
+//       searchKDTree(ds.kdtree, ds, query, globalHeap);
+//     });
+
+//     // 6) Extract and sort neighbors by ascending distance
+//     auto neighbors = globalHeap.getAll();
+//     std::sort(neighbors.begin(), neighbors.end(),
+//               [&](auto &a, auto &b){ return a.dist < b.dist; });
+
+//     // 7) Collect pointers
+//     std::vector<const Point*> result;
+//     result.reserve(neighbors.size());
+//     for (auto &n : neighbors) result.push_back(n.pt);
+//     return result;
+// }
+
 std::vector<const Point*> parallelNearestNeighborQuery(
     const parlay::sequence<Cluster> &clusters,
     const Point &query,
@@ -137,9 +183,14 @@ std::vector<const Point*> parallelNearestNeighborQuery(
     std::sort(neighbors.begin(), neighbors.end(),
               [&](auto &a, auto &b){ return a.dist < b.dist; });
 
-    // 7) Collect pointers
+    // 7) Collect up to K distinct pointers
     std::vector<const Point*> result;
-    result.reserve(neighbors.size());
-    for (auto &n : neighbors) result.push_back(n.pt);
+    result.reserve(std::min(neighbors.size(), K));
+    for (auto &n : neighbors) {
+      if (std::find(result.begin(), result.end(), n.pt) == result.end()) {
+        result.push_back(n.pt);
+        if (result.size() == K) break;
+      }
+    }
     return result;
 }
