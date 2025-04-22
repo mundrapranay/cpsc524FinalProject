@@ -57,8 +57,8 @@ void updateClusterCentroids(std::vector<Cluster>& clusters) {
 
 int main(int argc, char** argv) {
     // Default parameters
-    std::string inputFilename = "example_data/sample2d.csv";
-    std::string outputFilename = "example_data/clustered_points2d.csv";
+    std::string inputFilename = "example_data/rnaseq_sample50d_1000_cells.csv";
+    std::string outputFilename = "example_data/rnaseq_sample50d_1000_cells_clustered.csv";
     double eps = 0.2;
     int minNeighbors = 10;
     bool buildTrees = true; // Whether to build kD-trees
