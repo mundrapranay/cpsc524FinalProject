@@ -9,6 +9,7 @@
 #include <cmath>
 #include <random>
 #include <algorithm>
+#include <queue>
 
 // Function declarations from parallel_dbscan.cpp
 Dataset readCSV(const std::string& filename);
@@ -54,6 +55,65 @@ void updateClusterCentroids(std::vector<Cluster>& clusters) {
         clusters[i].centroid = computeCentroid(clusters[i].points);
     });
 }
+
+// Compute squared Euclidean distance
+double squaredDistance(const Point& a, const Point& b) {
+    double dist = 0.0;
+    for (int i = 0; i < a.dimension; ++i) {
+        double diff = a.coordinates[i] - b.coordinates[i];
+        dist += diff * diff;
+    }
+    return dist;
+}
+
+// Recursive kNN helper
+void kNearestNeighborsRecursive(KDNode* node, const Dataset& data,
+                                const Point& query, int k,
+                                std::priority_queue<std::pair<double, const Point*>>& maxHeap) {
+    if (!node) return;
+
+    const Point& currentPoint = data.points[node->pointIndex];
+    double dist = squaredDistance(query, currentPoint);
+
+    if (maxHeap.size() < k) {
+        maxHeap.emplace(dist, &currentPoint);
+    } else if (dist < maxHeap.top().first) {
+        maxHeap.pop();
+        maxHeap.emplace(dist, &currentPoint);
+    }
+
+    if (node->axis == -1) return;
+
+    double queryVal = query.coordinates[node->axis];
+    double splitVal = node->splitValue;
+
+    KDNode* first = (queryVal <= splitVal) ? node->left : node->right;
+    KDNode* second = (queryVal <= splitVal) ? node->right : node->left;
+
+    // Recurse into the closer subtree first
+    kNearestNeighborsRecursive(first, data, query, k, maxHeap);
+
+    // Recurse into the other subtree if needed
+    double axisDist = (queryVal - splitVal) * (queryVal - splitVal);
+    if (maxHeap.size() < k || axisDist < maxHeap.top().first) {
+        kNearestNeighborsRecursive(second, data, query, k, maxHeap);
+    }
+}
+
+// Public interface
+std::vector<const Point*> kNearestNeighbors(KDNode* root, const Dataset& data, const Point& query, int k) {
+    std::priority_queue<std::pair<double, const Point*>> maxHeap;
+    kNearestNeighborsRecursive(root, data, query, k, maxHeap);
+
+    std::vector<const Point*> result;
+    while (!maxHeap.empty()) {
+        result.push_back(maxHeap.top().second);
+        maxHeap.pop();
+    }
+    std::reverse(result.begin(), result.end());
+    return result;
+}
+
 
 int main(int argc, char** argv) {
     // Default parameters
@@ -119,7 +179,6 @@ int main(int argc, char** argv) {
         std::cout << "Built global kD-tree in " << duration << " ms.\n";
     }
 
-    // Query global KD Tree with some example points, get querying time
     if (buildTrees && data.n > 0) {
         // Use a random point for the query
         std::random_device rd;
@@ -129,43 +188,41 @@ int main(int argc, char** argv) {
         
         const Point& queryPoint = data.points[randomIdx];
 
-        std::cout << "Query point coordinates: ";
-        for (int d = 0; d < queryPoint.dimension; ++d) {
-            std::cout << queryPoint.coordinates[d] << " ";
-        }
-        std::cout << std::endl;
-        
-        std::cout << "\nPerforming " << k << "-nearest neighbor query using " 
-                << p << " closest clusters...\n";
-        
+        // std::cout << "\nQuery point coordinates (global kD-tree): ";
+        // for (int d = 0; d < queryPoint.dimension; ++d) {
+        //     std::cout << queryPoint.coordinates[d] << " ";
+        // }
+        // std::cout << std::endl;
+
+        // Run nearest neighbor query on global tree
+        std::cout << "\nPerforming " << k << "-nearest neighbor query using global kD-tree...\n";
+
         start = std::chrono::high_resolution_clock::now();
-        auto nearestPoints = parallelNearestNeighborQuery(
-            parlay::sequence<Cluster>(clusters.begin(), clusters.end()),
-            queryPoint, k, p);
+        std::vector<const Point*> globalNearest = kNearestNeighbors(data.kdtree, data, queryPoint, k);
+
         end = std::chrono::high_resolution_clock::now();
         
         duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        
-        std::cout << "Found " << nearestPoints.size() << " nearest neighbors in " 
-                  << duration << " µs.\n";
-        
-        // Print distances to nearest neighbors
-        std::cout << "Distances to nearest neighbors:\n";
-        for (size_t i = 0; i < nearestPoints.size(); ++i) {
+        std::cout << "Global KD-Tree query found " << globalNearest.size() 
+                << " nearest neighbors in " << duration << " µs.\n";
+
+        std::cout << "Distances to global nearest neighbors:\n";
+        for (size_t i = 0; i < globalNearest.size(); ++i) {
             double dist = 0.0;
             for (int d = 0; d < queryPoint.dimension; ++d) {
-                double diff = queryPoint.coordinates[d] - nearestPoints[i]->coordinates[d];
+                double diff = queryPoint.coordinates[d] - globalNearest[i]->coordinates[d];
                 dist += diff * diff;
             }
             dist = std::sqrt(dist);
-            std::cout << "  Neighbor " << i + 1 << ": distance=" << dist << ", coords=(";
-            for (int d = 0; d < nearestPoints[i]->dimension; ++d) {
-                std::cout << nearestPoints[i]->coordinates[d];
-                if (d < nearestPoints[i]->dimension - 1) std::cout << ", ";
-            }
-            std::cout << ")" << std::endl;
+            std::cout << "  Neighbor " << i + 1 << ": distance=" << dist << std::endl;  // ", coords=(";
+            // for (int d = 0; d < globalNearest[i]->dimension; ++d) {
+            //     std::cout << globalNearest[i]->coordinates[d];
+            //     if (d < globalNearest[i]->dimension - 1) std::cout << ", ";
+            // }
+            // std::cout << ")\n";
         }
     }
+
 
     // Our Algorithm Phase 1: Run DBSCAN clustering
     std::cout << "--------------------------------------" << std::endl;
@@ -217,11 +274,11 @@ int main(int argc, char** argv) {
         
         const Point& queryPoint = data.points[randomIdx];
 
-        std::cout << "Query point coordinates: ";
-        for (int d = 0; d < queryPoint.dimension; ++d) {
-            std::cout << queryPoint.coordinates[d] << " ";
-        }
-        std::cout << std::endl;
+        // std::cout << "Query point coordinates: ";
+        // for (int d = 0; d < queryPoint.dimension; ++d) {
+        //     std::cout << queryPoint.coordinates[d] << " ";
+        // }
+        // std::cout << std::endl;
         
         std::cout << "\nPerforming " << k << "-nearest neighbor query using " 
                 << p << " closest clusters...\n";
@@ -246,12 +303,12 @@ int main(int argc, char** argv) {
                 dist += diff * diff;
             }
             dist = std::sqrt(dist);
-            std::cout << "  Neighbor " << i + 1 << ": distance=" << dist << ", coords=(";
-            for (int d = 0; d < nearestPoints[i]->dimension; ++d) {
-                std::cout << nearestPoints[i]->coordinates[d];
-                if (d < nearestPoints[i]->dimension - 1) std::cout << ", ";
-            }
-            std::cout << ")" << std::endl;
+            std::cout << "  Neighbor " << i + 1 << ": distance=" << dist << std::endl;  // ", coords=(";
+            // for (int d = 0; d < nearestPoints[i]->dimension; ++d) {
+            //     std::cout << nearestPoints[i]->coordinates[d];
+            //     if (d < nearestPoints[i]->dimension - 1) std::cout << ", ";
+            // }
+            // std::cout << ")" << std::endl;
         }
     }
     

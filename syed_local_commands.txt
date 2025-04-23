@@ -1,0 +1,16 @@
+make
+//--- Run code ---//
+
+// 1050 points, 2D
+./dbscan_clustering -i "example_data/sample2d.csv" -o "example_data/sample2d_clustered.csv" --eps 0.2
+
+// 1000 points, 50D
+./dbscan_clustering -i "example_data/rnaseq_sample50d_1000_cells.csv" -o "example_data/rnaseq_sample50d_1000_cells_clustered.csv" --eps 0.2
+
+// 1000 points, 5000D
+./dbscan_clustering -i "example_data/rnaseq_sample5000d_1000_cells.csv" -o "example_data/rnaseq_sample5000d_1000_cells_clustered.csv" --eps 20.0
+
+// 2000 points, 5000D
+./dbscan_clustering -i "example_data/rnaseq_sample5000d_2000_cells.csv" -o "example_data/rnaseq_sample5000d_2000_cells_clustered.csv" --eps 20.0
+
+

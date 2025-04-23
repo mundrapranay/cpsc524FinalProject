@@ -10,3 +10,8 @@ parallel_dbscan
 dbscan_clustering
 test_kdtree.cpp
 test_kdtree
+example_data/cell_type_labels_*
+example_data/rnaseq_sample1000*
+example_data/rnaseq_sample5000*
+example_data/rnaseq_sample10000*
+example_data/*clustered.csv
