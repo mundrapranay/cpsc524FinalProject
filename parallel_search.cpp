@@ -76,32 +76,62 @@ public:
         }
         return out;
     }
+
+    size_t heapSize() {
+      std::lock_guard<std::mutex> lock(mtx);
+      return heap.size();
+    }
 };
 
 
-void searchKDTree(KDNode* node, const Dataset &ds, const Point &query, ConcurrentMaxHeap &globalHeap) {
+void searchKDTree(KDNode* node, const Dataset &ds, const Point &query, ConcurrentMaxHeap &globalHeap, size_t k) {
     
-    if (!node) return;
+    // if (!node) return;
 
-    // Visit this node
+    // // Visit this node
+    // const Point &p = ds.points[node->pointIndex];
+    // double d = sqDist(p, query);
+    // globalHeap.pushCandidate({d, &p});
+
+    // // Determine near/far child
+    // int axis = node->axis;
+    // double diff = query.coordinates[axis] - node->splitValue;
+    // KDNode *nearChild = (diff <= 0) ? node->left : node->right;
+    // KDNode *farChild  = (diff <= 0) ? node->right : node->left;
+
+    // // Recurse near side
+    // if (nearChild) searchKDTree(nearChild, ds, query, globalHeap);
+
+    // // Possibly recurse far side
+    // double worst = globalHeap.worstDist();
+    // if (diff*diff < worst && farChild) {
+    //     searchKDTree(farChild, ds, query, globalHeap);
+    // }
+
+    if (!node) return;
     const Point &p = ds.points[node->pointIndex];
     double d = sqDist(p, query);
     globalHeap.pushCandidate({d, &p});
 
-    // Determine near/far child
     int axis = node->axis;
     double diff = query.coordinates[axis] - node->splitValue;
     KDNode *nearChild = (diff <= 0) ? node->left : node->right;
     KDNode *farChild  = (diff <= 0) ? node->right : node->left;
 
-    // Recurse near side
-    if (nearChild) searchKDTree(nearChild, ds, query, globalHeap);
 
-    // Possibly recurse far side
-    double worst = globalHeap.worstDist();
-    if (diff*diff < worst && farChild) {
-        searchKDTree(farChild, ds, query, globalHeap);
-    }
+    parlay::par_do(
+      [&]{
+        searchKDTree(nearChild, ds, query, globalHeap, k);
+      },
+      [&]{
+        bool go_far;
+        {
+          go_far = (globalHeap.heapSize() < k || (diff * diff < globalHeap.worstDist()));
+        }
+        if (go_far) searchKDTree(farChild, ds, query, globalHeap, k);
+      }
+    );
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -147,11 +177,18 @@ std::vector<const Point*> parallelNearestNeighborQuery(
     parlay::parallel_for(0, P2, [&](size_t t) {
       size_t idx = sorted[t].second;
       const Dataset &ds = clusters[idx].points;
-      searchKDTree(ds.kdtree, ds, query, globalHeap);
+      searchKDTree(ds.kdtree, ds, query, globalHeap, K);
     });
 
     // 7) Extract all candidates, sort them ascending
     auto neighbors = globalHeap.getAll();
+    neighbors.erase(
+      std::remove_if(neighbors.begin(), neighbors.end(),
+        [](const Neighbor &n){
+          return !std::isfinite(n.dist);
+        }),
+      neighbors.end()
+    );
     std::sort(neighbors.begin(), neighbors.end(),
               [&](auto &a, auto &b){ return a.dist < b.dist; });
 
@@ -159,9 +196,10 @@ std::vector<const Point*> parallelNearestNeighborQuery(
     std::vector<const Point*> result;
     result.reserve(std::min(neighbors.size(), K));
     for (size_t i = 0; i < neighbors.size() && result.size() < K; ++i) {
-      if (neighbors[i].dist != std::numeric_limits<double>::infinity()) {
-        result.push_back(neighbors[i].pt);
-      }
+      // if (neighbors[i].dist != std::numeric_limits<double>::infinity()) {
+      //   result.push_back(neighbors[i].pt);
+      // }
+      result.push_back(neighbors[i].pt);
     }
     return result;
 }
