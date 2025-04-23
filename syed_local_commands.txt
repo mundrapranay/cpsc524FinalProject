@@ -11,6 +11,23 @@ make
 ./dbscan_clustering -i "example_data/rnaseq_sample5000d_1000_cells.csv" -o "example_data/rnaseq_sample5000d_1000_cells_clustered.csv" --eps 20.0
 
 // 2000 points, 5000D
-./dbscan_clustering -i "example_data/rnaseq_sample5000d_2000_cells.csv" -o "example_data/rnaseq_sample5000d_2000_cells_clustered.csv" --eps 20.0
+./dbscan_clustering -i "example_data/rnaseq_sample5000d_2000_cells.csv" -o "example_data/rnaseq_sample5000d_2000_cells_clustered.csv" --eps 20.0 --min-pts 5
+
+// 5000 points, 5000D
+./dbscan_clustering -i "example_data/rnaseq_sample5000d_5000_cells.csv" -o "example_data/rnaseq_sample5000d_5000_cells_clustered.csv" --eps 20.0
+
+// 10000 points, 5000D
+./dbscan_clustering -i "example_data/rnaseq_sample5000d_10000_cells.csv" -o "example_data/rnaseq_sample5000d_10000_cells_clustered.csv" --eps 20.0
+
+// 20000 points, 5000D
+./dbscan_clustering -i "example_data/rnaseq_sample5000d_20000_cells.csv" -o "example_data/rnaseq_sample5000d_20000_cells_clustered.csv" --eps 20.0
+
+
+
+Improvements to make:
+1. Switch DBScan distance metric to cosine rather than euclidean - currently suffering curse of dimensionality with euclidean distance in high-dimensional data.
+    - Specifically, it is hard to tune the eps and min_neighbors parameters of the DBSCAN function. Since the data is high-dimensional and noisy, there are not many neighbors, so min_neighbors has to be set to a low value. But because of curse of dimensionality, the euclidean distances become very large in magnitude. This makes it difficult to pick the correct min_neighbors and eps, leading to 1-2 clusters most of the time for our data.
+    - Ideally, our algorithm is at its best when exploting local structure in the data.
+2. Finish running the pipline and getting build/query times for 10k featuures and num_cells=1000...20000
 
 

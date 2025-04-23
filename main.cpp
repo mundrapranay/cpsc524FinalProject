@@ -164,7 +164,7 @@ int main(int argc, char** argv) {
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
     
-    std::cout << "Loaded " << data.n << " points in " << duration << " ms.\n";
+    std::cout << "Loaded " << data.n << " points in " << duration << " ms.\n" << std::endl;
     
     // Compute global centroid
     data.centroid = computeCentroid(data);
