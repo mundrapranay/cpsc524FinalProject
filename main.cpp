@@ -57,9 +57,9 @@ void updateClusterCentroids(std::vector<Cluster>& clusters) {
 
 int main(int argc, char** argv) {
     // Default parameters
-    std::string inputFilename = "example_data/rnaseq_sample50d_1000_cells.csv";
-    std::string outputFilename = "example_data/rnaseq_sample50d_1000_cells_clustered.csv";
-    double eps = 0.2;
+    std::string inputFilename;  // = "example_data/rnaseq_sample50d_1000_cells.csv";
+    std::string outputFilename;  // = "example_data/rnaseq_sample50d_1000_cells_clustered.csv";
+    double eps;  //  = 0.2;
     int minNeighbors = 10;
     bool buildTrees = true; // Whether to build kD-trees
     int k = 5;
@@ -118,8 +118,57 @@ int main(int argc, char** argv) {
         
         std::cout << "Built global kD-tree in " << duration << " ms.\n";
     }
-    
-    // Run DBSCAN clustering
+
+    // Query global KD Tree with some example points, get querying time
+    if (buildTrees && data.n > 0) {
+        // Use a random point for the query
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(0, data.n - 1);
+        int randomIdx = dis(gen);
+        
+        const Point& queryPoint = data.points[randomIdx];
+
+        std::cout << "Query point coordinates: ";
+        for (int d = 0; d < queryPoint.dimension; ++d) {
+            std::cout << queryPoint.coordinates[d] << " ";
+        }
+        std::cout << std::endl;
+        
+        std::cout << "\nPerforming " << k << "-nearest neighbor query using " 
+                << p << " closest clusters...\n";
+        
+        start = std::chrono::high_resolution_clock::now();
+        auto nearestPoints = parallelNearestNeighborQuery(
+            parlay::sequence<Cluster>(clusters.begin(), clusters.end()),
+            queryPoint, k, p);
+        end = std::chrono::high_resolution_clock::now();
+        
+        duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        
+        std::cout << "Found " << nearestPoints.size() << " nearest neighbors in " 
+                  << duration << " µs.\n";
+        
+        // Print distances to nearest neighbors
+        std::cout << "Distances to nearest neighbors:\n";
+        for (size_t i = 0; i < nearestPoints.size(); ++i) {
+            double dist = 0.0;
+            for (int d = 0; d < queryPoint.dimension; ++d) {
+                double diff = queryPoint.coordinates[d] - nearestPoints[i]->coordinates[d];
+                dist += diff * diff;
+            }
+            dist = std::sqrt(dist);
+            std::cout << "  Neighbor " << i + 1 << ": distance=" << dist << ", coords=(";
+            for (int d = 0; d < nearestPoints[i]->dimension; ++d) {
+                std::cout << nearestPoints[i]->coordinates[d];
+                if (d < nearestPoints[i]->dimension - 1) std::cout << ", ";
+            }
+            std::cout << ")" << std::endl;
+        }
+    }
+
+    // Our Algorithm Phase 1: Run DBSCAN clustering
+    std::cout << "--------------------------------------" << std::endl;
     std::cout << "Running parallel DBSCAN with eps = " << eps
               << " and minNeighbors = " << minNeighbors << ".\n";
     
@@ -134,11 +183,14 @@ int main(int argc, char** argv) {
     for (size_t i = 0; i < clusters.size(); ++i) {
         std::cout << "Cluster " << i << ": " << clusters[i].points.n << " points\n";
     }
-    
+
+    std::cout << "--------------------------------------" << std::endl;
+    std::cout << "Testing Cluster KD Tree Algorithm" << std::endl;
+
     // Update cluster centroids
     updateClusterCentroids(clusters);
     
-    // Build kD-trees for each cluster
+    // Our Algorithm Phase 2: Build kD-trees for each cluster
     if (buildTrees) {
         start = std::chrono::high_resolution_clock::now();
         buildClusterKDTrees(clusters);
@@ -152,7 +204,10 @@ int main(int argc, char** argv) {
     writeClusteredPointsToCSV(outputFilename, data, labels);
     std::cout << "Wrote clustered points to " << outputFilename << ".\n";
     
-    // Example of nearest-neighbor query
+    // Our Algorithm Phase 3: Example of nearest-neighbor query
+    // std::cout << "buildTrees:" << buildTrees << std::endl;
+    // std::cout << "clusters.empty():" << clusters.empty() << std::endl;
+    // std::cout << "data.n:" << data.n << std::endl;
     if (buildTrees && !clusters.empty() && data.n > 0) {
         // Use a random point for the query
         std::random_device rd;
@@ -207,6 +262,7 @@ int main(int argc, char** argv) {
             deleteKDTree(cluster.points.kdtree);
         }
     }
+    std::cout << "Script finished." << std::endl<< "------------------" << std::endl;
     
     return 0;
 }
