@@ -164,33 +164,65 @@ std::vector<const Point*> parallelNearestNeighborQuery(
     // 5) Shared concurrent max-heap for the top-K candidates
     ConcurrentMaxHeap globalHeap(K);
 
-    // 6) Parallel search the top-P2 trees
-    parlay::parallel_for(0, P2, [&](size_t t) {
-      size_t idx = sorted[t].second;
-      const Dataset &ds = clusters[idx].points;
-      searchKDTree(ds.kdtree, ds, query, globalHeap, K);
+    // // 6) Parallel search the top-P2 trees
+    // parlay::parallel_for(0, P2, [&](size_t t) {
+    //   size_t idx = sorted[t].second;
+    //   const Dataset &ds = clusters[idx].points;
+    //   searchKDTree(ds.kdtree, ds, query, globalHeap, K);
+    // });
+
+    // // 7) Extract all candidates, sort them ascending
+    // auto neighbors = globalHeap.getAll();
+    // neighbors.erase(
+    //   std::remove_if(neighbors.begin(), neighbors.end(),
+    //     [](const Neighbor &n){
+    //       return !std::isfinite(n.dist);
+    //     }),
+    //   neighbors.end()
+    // );
+    // std::sort(neighbors.begin(), neighbors.end(),
+    //           [&](auto &a, auto &b){ return a.dist < b.dist; });
+
+    // // 8) Simply take the first K (no dedupe)
+    // std::vector<const Point*> result;
+    // result.reserve(std::min(neighbors.size(), K));
+    // for (size_t i = 0; i < neighbors.size() && result.size() < K; ++i) {
+    //   // if (neighbors[i].dist != std::numeric_limits<double>::infinity()) {
+    //   //   result.push_back(neighbors[i].pt);
+    //   // }
+    //   result.push_back(neighbors[i].pt);
+    // }
+    // return result;
+
+    parlay::sequence<std::vector<Neighbor>> allLocal
+    = parlay::tabulate(P2, [&](size_t t) {
+        size_t idx = sorted[t].second;
+        const Dataset &ds = clusters[idx].points;
+        // each thread gets its own heap
+        ConcurrentMaxHeap localHeap(K);
+        searchKDTree(ds.kdtree, ds, query, localHeap, K);
+        // extract and return its sorted candidates
+        auto v = localHeap.getAll();
+        std::sort(v.begin(), v.end(),
+                  [](auto &a, auto &b){ return a.dist < b.dist; });
+        return v;
     });
 
-    // 7) Extract all candidates, sort them ascending
-    auto neighbors = globalHeap.getAll();
-    neighbors.erase(
-      std::remove_if(neighbors.begin(), neighbors.end(),
-        [](const Neighbor &n){
-          return !std::isfinite(n.dist);
-        }),
-      neighbors.end()
-    );
-    std::sort(neighbors.begin(), neighbors.end(),
-              [&](auto &a, auto &b){ return a.dist < b.dist; });
+    // 7) Flatten all per‐cluster lists
+    auto flat = parlay::flatten(allLocal);
 
-    // 8) Simply take the first K (no dedupe)
-    std::vector<const Point*> result;
-    result.reserve(std::min(neighbors.size(), K));
-    for (size_t i = 0; i < neighbors.size() && result.size() < K; ++i) {
-      // if (neighbors[i].dist != std::numeric_limits<double>::infinity()) {
-      //   result.push_back(neighbors[i].pt);
-      // }
-      result.push_back(neighbors[i].pt);
+    // 8) pick the global top-K from 'flat' (no locks needed)
+    if (flat.size() > K) {
+      std::nth_element(flat.begin(), flat.begin()+K, flat.end(),
+                      [](auto &a, auto &b){ return a.dist < b.dist; });
+      flat.resize(K);
     }
+    std::sort(flat.begin(), flat.end(),
+              [](auto &a, auto &b){ return a.dist < b.dist; });
+
+    // 9) collect pointers
+    std::vector<const Point*> result;
+    result.reserve(flat.size());
+    for (auto &n : flat) result.push_back(n.pt);
     return result;
-}
+  }
