@@ -4,7 +4,7 @@ LDFLAGS = -pthread
 
 SRCS = main.cpp parallel_dbscan.cpp parallel_search.cpp parallel_kdtree.cpp
 OBJS = $(SRCS:.cpp=.o)
-TARGET = dbscan_clustering
+TARGET = dbscan_kdtree
 
 all: $(TARGET)
 

@@ -35,4 +35,22 @@ struct Cluster {
     Point centroid;
 };
 
+struct QueryStats {
+    double totalTime;
+    double minTime;
+    double maxTime;
+    double avgTime;
+    std::vector<double> queryTimes;
+    std::vector<double> nearestDistances;
+    
+    void computeStats() {
+        if (queryTimes.empty()) return;
+        
+        minTime = *std::min_element(queryTimes.begin(), queryTimes.end());
+        maxTime = *std::max_element(queryTimes.begin(), queryTimes.end());
+        totalTime = std::accumulate(queryTimes.begin(), queryTimes.end(), 0.0);
+        avgTime = totalTime / queryTimes.size();
+    }
+};
+
 #endif // DATASTRUCTURES_H
