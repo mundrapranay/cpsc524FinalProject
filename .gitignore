@@ -20,3 +20,8 @@ example_data/rnaseq_sample1000*
 example_data/rnaseq_sample5000*
 example_data/rnaseq_sample10000*
 example_data/*clustered.csv
+
+# log files
+*.log
+*.out
+*.err
