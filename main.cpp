@@ -485,6 +485,15 @@ int main(int argc, char** argv) {
         std::cout << "Cluster " << i << ": " << clusters[i].points.n << " points\n";
     }
 
+    // Count number of noisy points
+    int numNoisy = 0;
+    for (size_t i = 0; i < labels.size(); ++i) {
+        if (labels[i] == -2) numNoisy++;
+    }
+    std::cout << "--------------------------------------" << std::endl;
+    std::cout << "Number of noise points: " << numNoisy << " (" 
+            << (100.0 * numNoisy / data.n) << "% of total)\n";
+
     // Skip query process if we have no clusters
     if (clusters.empty()) {
         std::cerr << "No clusters found. Exiting.\n";
