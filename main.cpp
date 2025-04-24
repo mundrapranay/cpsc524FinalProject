@@ -307,19 +307,28 @@ int main(int argc, char** argv) {
 
     if (outputFilename.empty()) {
         // Create default output filename based on input
-        size_t lastDot = inputFilename.find_last_of(".");
         size_t lastSlash = inputFilename.find_last_of("/\\");
+
+        std::string baseFilename = (lastSlash != std::string::npos) ? 
+                               inputFilename.substr(lastSlash + 1) : 
+                               inputFilename;
+    
+        // Find extension in the base filename
+        size_t lastDot = baseFilename.find_last_of(".");
         
         // Convert numeric values to strings
         std::ostringstream epsStr, minPtsStr;
         epsStr << eps;
         minPtsStr << minNeighbors;
         
-        if (lastDot != std::string::npos && (lastSlash == std::string::npos || lastDot > lastSlash)) {
-            outputFilename = inputFilename.substr(0, lastDot) + "_eps_" + epsStr.str() + 
-                            "_minpts_" + minPtsStr.str() + "_clustered" + inputFilename.substr(lastDot);
+        // Specify the output directory
+        std::string outputDir = "example_data/";
+        
+        if (lastDot != std::string::npos) {
+            outputFilename = outputDir + baseFilename.substr(0, lastDot) + "_eps_" + epsStr.str() + 
+                            "_minpts_" + minPtsStr.str() + "_clustered" + baseFilename.substr(lastDot);
         } else {
-            outputFilename = inputFilename + "_clustered.csv";
+            outputFilename = outputDir + baseFilename + "_clustered.csv";
         }
     }
     

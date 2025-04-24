@@ -4,12 +4,17 @@ hello_world.cpp
 hello_world
 local_notes_syed.txt
 *.dSYM
+
+# executables and .obj fils
 test_clustering
 parallel_dbscan
 *.o
+*.obj
 dbscan_clustering
 test_kdtree.cpp
 test_kdtree
+dbscan_kdtree
+
 example_data/cell_type_labels_*
 example_data/rnaseq_sample1000*
 example_data/rnaseq_sample5000*
