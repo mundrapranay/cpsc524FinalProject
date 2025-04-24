@@ -8,7 +8,6 @@
 #include <limits>
 #include <cmath>
 
-
 struct Neighbor {
     double dist;
     const Point* pt;
@@ -74,59 +73,151 @@ public:
     }
 };
 
+// NOTE: THIS IS FOR LOCAL / CLUSTER kD TREE SEARCHES
 
-void searchKDTree(KDNode* node, const Dataset &ds, const Point &query, ConcurrentMaxHeap &globalHeap, size_t k) {
-    
-    // if (!node) return;
-
-    // // Visit this node
-    // const Point &p = ds.points[node->pointIndex];
-    // double d = sqDist(p, query);
-    // globalHeap.pushCandidate({d, &p});
-
-    // // Determine near/far child
-    // int axis = node->axis;
-    // double diff = query.coordinates[axis] - node->splitValue;
-    // KDNode *nearChild = (diff <= 0) ? node->left : node->right;
-    // KDNode *farChild  = (diff <= 0) ? node->right : node->left;
-
-    // // Recurse near side
-    // if (nearChild) searchKDTree(nearChild, ds, query, globalHeap);
-
-    // // Possibly recurse far side
-    // double worst = globalHeap.worstDist();
-    // if (diff*diff < worst && farChild) {
-    //     searchKDTree(farChild, ds, query, globalHeap);
-    // }
-
+void searchKDTree(
+    KDNode* node, 
+    const Dataset &ds, 
+    const Point &query, 
+    ConcurrentMaxHeap &globalHeap, 
+    size_t k) 
+{
     if (!node) return;
+    
+    // Process current node
     const Point &p = ds.points[node->pointIndex];
     double d = cosineDistance(p, query);
     globalHeap.pushCandidate({d, &p});
-
+    
+    // If leaf node, return early
+    if (!node->left && !node->right) {
+        return;
+    }
+    
+    // Determine which child to visit first
     int axis = node->axis;
     double diff = query.coordinates[axis] - node->splitValue;
     KDNode *nearChild = (diff <= 0) ? node->left : node->right;
     KDNode *farChild  = (diff <= 0) ? node->right : node->left;
-
-
+    
+    // Parallelize at all levels
     parlay::par_do(
-      [&]{
-        searchKDTree(nearChild, ds, query, globalHeap, k);
-      },
-      [&]{
-        bool go_far;
-        {
-          go_far = (globalHeap.heapSize() < k || (diff * diff < globalHeap.worstDist()));
+        [&]() {
+            if (nearChild) {
+                searchKDTree(nearChild, ds, query, globalHeap, k);
+            }
+        },
+        [&]() {
+            // Check if we might find better points in the far subtree
+            bool go_far = (globalHeap.heapSize() < k || (diff * diff < globalHeap.worstDist()));
+            
+            if (go_far && farChild) {
+                searchKDTree(farChild, ds, query, globalHeap, k);
+            }
         }
-        if (go_far) searchKDTree(farChild, ds, query, globalHeap, k);
-      }
     );
-
 }
+
+// void searchKDTreeLimitDepth(
+//     KDNode* node, 
+//     const Dataset &ds, 
+//     const Point &query, 
+//     ConcurrentMaxHeap &globalHeap, 
+//     size_t k,
+//     int depth = 0) 
+// {
+//     if (!node) return;
+    
+//     // Process current node
+//     const Point &p = ds.points[node->pointIndex];
+//     double d = cosineDistance(p, query);
+//     globalHeap.pushCandidate({d, &p});
+    
+//     // If leaf node, return early
+//     if (!node->left && !node->right) {
+//         return;
+//     }
+    
+//     // Determine which child to visit first
+//     int axis = node->axis;
+//     double diff = query.coordinates[axis] - node->splitValue;
+//     KDNode *nearChild = (diff <= 0) ? node->left : node->right;
+//     KDNode *farChild  = (diff <= 0) ? node->right : node->left;
+    
+//     // Only parallelize up to depth 3
+//     if (depth < 3) {
+//         // Parallelize at shallow depths
+//         parlay::par_do(
+//             [&]() {
+//                 if (nearChild) {
+//                     searchKDTree(nearChild, ds, query, globalHeap, k, depth + 1);
+//                 }
+//             },
+//             [&]() {
+//                 // Check if we might find better points in the far subtree
+//                 bool go_far = (globalHeap.heapSize() < k || (diff * diff < globalHeap.worstDist()));
+                
+//                 if (go_far && farChild) {
+//                     searchKDTree(farChild, ds, query, globalHeap, k, depth + 1);
+//                 }
+//             }
+//         );
+//     } else {
+//         // Sequential search for deeper levels
+//         if (nearChild) {
+//             searchKDTree(nearChild, ds, query, globalHeap, k, depth + 1);
+//         }
+        
+//         // More aggressive pruning at deeper levels
+//         bool go_far = (globalHeap.heapSize() < k || (diff * diff < globalHeap.worstDist()));
+        
+//         if (go_far && farChild) {
+//             searchKDTree(farChild, ds, query, globalHeap, k, depth + 1);
+//         }
+//     }
+// }
+
+// void searchKDTreeSequential(
+//     KDNode* node, 
+//     const Dataset &ds, 
+//     const Point &query, 
+//     ConcurrentMaxHeap &globalHeap, 
+//     size_t k) 
+// {
+//     if (!node) return;
+    
+//     // Process current node
+//     const Point &p = ds.points[node->pointIndex];
+//     double d = cosineDistance(p, query);
+//     globalHeap.pushCandidate({d, &p});
+    
+//     // If leaf node, return early
+//     if (!node->left && !node->right) {
+//         return;
+//     }
+    
+//     // Determine which child to visit first
+//     int axis = node->axis;
+//     double diff = query.coordinates[axis] - node->splitValue;
+//     KDNode *nearChild = (diff <= 0) ? node->left : node->right;
+//     KDNode *farChild  = (diff <= 0) ? node->right : node->left;
+    
+//     // Always search near child first (sequentially)
+//     if (nearChild) {
+//         searchKDTreeSequential(nearChild, ds, query, globalHeap, k);
+//     }
+    
+//     // Only search far subtree if potentially useful
+//     bool go_far = (globalHeap.heapSize() < k || (diff * diff < globalHeap.worstDist()));
+    
+//     if (go_far && farChild) {
+//         searchKDTreeSequential(farChild, ds, query, globalHeap, k);
+//     }
+// }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Parallel nearest-neighbor query using Parlay
+// NOTE: THIS IS FOR LOCAL CLUSTER SEARCHES (main.cpp)
 
 // clusters: sequence of clusters
 // query: the query point
@@ -162,37 +253,7 @@ std::vector<const Point*> parallelNearestNeighborQuery(
     size_t P2 = std::min(P, sorted.size());
 
     // 5) Shared concurrent max-heap for the top-K candidates
-    ConcurrentMaxHeap globalHeap(K);
-
-    // // 6) Parallel search the top-P2 trees
-    // parlay::parallel_for(0, P2, [&](size_t t) {
-    //   size_t idx = sorted[t].second;
-    //   const Dataset &ds = clusters[idx].points;
-    //   searchKDTree(ds.kdtree, ds, query, globalHeap, K);
-    // });
-
-    // // 7) Extract all candidates, sort them ascending
-    // auto neighbors = globalHeap.getAll();
-    // neighbors.erase(
-    //   std::remove_if(neighbors.begin(), neighbors.end(),
-    //     [](const Neighbor &n){
-    //       return !std::isfinite(n.dist);
-    //     }),
-    //   neighbors.end()
-    // );
-    // std::sort(neighbors.begin(), neighbors.end(),
-    //           [&](auto &a, auto &b){ return a.dist < b.dist; });
-
-    // // 8) Simply take the first K (no dedupe)
-    // std::vector<const Point*> result;
-    // result.reserve(std::min(neighbors.size(), K));
-    // for (size_t i = 0; i < neighbors.size() && result.size() < K; ++i) {
-    //   // if (neighbors[i].dist != std::numeric_limits<double>::infinity()) {
-    //   //   result.push_back(neighbors[i].pt);
-    //   // }
-    //   result.push_back(neighbors[i].pt);
-    // }
-    // return result;
+    // ConcurrentMaxHeap globalHeap(K);
 
     parlay::sequence<std::vector<Neighbor>> allLocal
     = parlay::tabulate(P2, [&](size_t t) {
@@ -200,7 +261,11 @@ std::vector<const Point*> parallelNearestNeighborQuery(
         const Dataset &ds = clusters[idx].points;
         // each thread gets its own heap
         ConcurrentMaxHeap localHeap(K);
+
         searchKDTree(ds.kdtree, ds, query, localHeap, K);
+
+        // searchKDTreeSequential(ds.kdtree, ds, query, localHeap, K);
+
         // extract and return its sorted candidates
         auto v = localHeap.getAll();
         std::sort(v.begin(), v.end(),
@@ -224,5 +289,149 @@ std::vector<const Point*> parallelNearestNeighborQuery(
     std::vector<const Point*> result;
     result.reserve(flat.size());
     for (auto &n : flat) result.push_back(n.pt);
+    return result;
+  }
+
+// Fully parallel search for global kD-tree using concurrent max heap
+void searchGlobalTreeParallelWithHeap(
+    KDNode* node, 
+    const Dataset &ds, 
+    const Point &query, 
+    ConcurrentMaxHeap &globalHeap, 
+    int k,
+    int depth = 0) 
+{
+    if (!node) return;
+    
+    // Process current node
+    const Point &p = ds.points[node->pointIndex];
+    double d = cosineDistance(p, query);
+    globalHeap.pushCandidate({d, &p});
+    
+    // If leaf node, return early
+    if (!node->left && !node->right) {
+        return;
+    }
+    
+    // Determine which child to visit first
+    int axis = node->axis;
+    double queryVal = query.coordinates[axis];
+    double splitVal = node->splitValue;
+    
+    KDNode *nearChild = (queryVal <= splitVal) ? node->left : node->right;
+    KDNode *farChild = (queryVal <= splitVal) ? node->right : node->left;
+    
+    // Only parallelize up to depth 3
+    if (depth < 3) {
+        // Parallelize at shallow depths
+        parlay::par_do(
+            [&]() {
+                if (nearChild) {
+                    searchGlobalTreeParallelWithHeap(nearChild, ds, query, globalHeap, k, depth + 1);
+                }
+            },
+            [&]() {
+                // Only search far subtree if potentially useful
+                double axisDist = std::abs(queryVal - splitVal);
+                double axisDist2 = axisDist * axisDist;
+                
+                // Check if we might find better points in the far subtree
+                bool go_far = (globalHeap.heapSize() < static_cast<size_t>(k) || axisDist2 < globalHeap.worstDist());
+                
+                if (go_far && farChild) {
+                    searchGlobalTreeParallelWithHeap(farChild, ds, query, globalHeap, k, depth + 1);
+                }
+            }
+        );
+    } else {
+        // Sequential search for deeper levels
+        if (nearChild) {
+            searchGlobalTreeParallelWithHeap(nearChild, ds, query, globalHeap, k, depth + 1);
+        }
+        
+        // Only search far subtree if potentially useful
+        double axisDist = std::abs(queryVal - splitVal);
+        double axisDist2 = axisDist * axisDist;
+        
+        // More aggressive pruning at deeper levels
+        bool go_far = (globalHeap.heapSize() < static_cast<size_t>(k) || axisDist2 < globalHeap.worstDist());
+        
+        if (go_far && farChild) {
+            searchGlobalTreeParallelWithHeap(farChild, ds, query, globalHeap, k, depth + 1);
+        }
+    }
+}
+
+
+// void searchGlobalTreeSequential(
+//     KDNode* node, 
+//     const Dataset &ds, 
+//     const Point &query, 
+//     ConcurrentMaxHeap &globalHeap, 
+//     int k) 
+// {
+//     if (!node) return;
+    
+//     // Process current node
+//     const Point &p = ds.points[node->pointIndex];
+//     double d = cosineDistance(p, query);
+//     globalHeap.pushCandidate({d, &p});
+    
+//     // If leaf node, return early
+//     if (!node->left && !node->right) {
+//         return;
+//     }
+    
+//     // Determine which child to visit first
+//     int axis = node->axis;
+//     double queryVal = query.coordinates[axis];
+//     double splitVal = node->splitValue;
+    
+//     KDNode *nearChild = (queryVal <= splitVal) ? node->left : node->right;
+//     KDNode *farChild = (queryVal <= splitVal) ? node->right : node->left;
+    
+//     // Always search near child first (sequentially)
+//     if (nearChild) {
+//         searchGlobalTreeSequential(nearChild, ds, query, globalHeap, k);
+//     }
+    
+//     // Only search far subtree if potentially useful
+//     double axisDist = std::abs(queryVal - splitVal);
+//     double axisDist2 = axisDist * axisDist;
+    
+//     // Check if we might find better points in the far subtree
+//     bool go_far = (globalHeap.heapSize() < static_cast<size_t>(k) || axisDist2 < globalHeap.worstDist());
+    
+//     if (go_far && farChild) {
+//         searchGlobalTreeSequential(farChild, ds, query, globalHeap, k);
+//     }
+// }
+
+
+// Public interface for fully parallel global kD-tree search
+std::vector<const Point*> kNearestNeighborsParallelGlobal(
+    KDNode* root, 
+    const Dataset& data, 
+    const Point& query, 
+    int k) 
+{
+    // Use a ConcurrentMaxHeap for the global search
+    ConcurrentMaxHeap globalHeap(k);
+    
+    // Search tree directly with the heap
+    searchGlobalTreeParallelWithHeap(root, data, query, globalHeap, k);
+    // searchGlobalTreeSequential(root, data, query, globalHeap, k);
+    
+    // Get all candidates from the heap (already sorted)
+    auto candidates = globalHeap.getAll();
+    
+    // Extract the points
+    std::vector<const Point*> result;
+    result.reserve(candidates.size());
+    
+    for (const auto& candidate : candidates) {
+        result.push_back(candidate.pt);
+    }
+    
     return result;
   }

@@ -12,6 +12,8 @@
 #include <random>
 #include <algorithm>
 #include <queue>
+#include <unordered_set>
+#include <functional>
 
 // Function declarations from parallel_dbscan.cpp
 Dataset readCSV(const std::string& filename);
@@ -24,6 +26,13 @@ void writeClusteredPointsToCSV(const std::string& filename,
                               const parlay::sequence<int>& labels);
 
 // Function declarations from parallel_search.cpp
+
+std::vector<const Point*> kNearestNeighborsParallelGlobal(
+    KDNode* root, 
+    const Dataset& data, 
+    const Point& query, 
+    int k);
+
 std::vector<const Point*> parallelNearestNeighborQuery(
     const parlay::sequence<Cluster> &clusters,
     const Point &query,
@@ -143,63 +152,6 @@ void updateClusterCentroids(std::vector<Cluster>& clusters) {
     });
 }
 
-// double squaredDistance(const Point& a, const Point& b) {
-//     double dist = 0.0;
-//     for (int i = 0; i < a.dimension; ++i) {
-//         double diff = a.coordinates[i] - b.coordinates[i];
-//         dist += diff * diff;
-//     }
-//     return dist;
-// }
-
-// Recursive kNN helper
-void kNearestNeighborsRecursive(KDNode* node, const Dataset& data,
-                                const Point& query, int k,
-                                std::priority_queue<std::pair<double, const Point*>>& maxHeap) {
-    if (!node) return;
-
-    const Point& currentPoint = data.points[node->pointIndex];
-    double dist = cosineDistance(query, currentPoint);
-
-    if (maxHeap.size() < static_cast<size_t>(k)) {
-        maxHeap.emplace(dist, &currentPoint);
-    } else if (dist < maxHeap.top().first) {
-        maxHeap.pop();
-        maxHeap.emplace(dist, &currentPoint);
-    }
-
-    if (node->axis == -1) return;
-
-    double queryVal = query.coordinates[node->axis];
-    double splitVal = node->splitValue;
-
-    KDNode* first = (queryVal <= splitVal) ? node->left : node->right;
-    KDNode* second = (queryVal <= splitVal) ? node->right : node->left;
-
-    // Recurse into the closer subtree first
-    kNearestNeighborsRecursive(first, data, query, k, maxHeap);
-
-    // Recurse into the other subtree if needed
-    double axisDist = (queryVal - splitVal) * (queryVal - splitVal);
-    if (maxHeap.size() < static_cast<size_t>(k) || axisDist < maxHeap.top().first) {
-        kNearestNeighborsRecursive(second, data, query, k, maxHeap);
-    }
-}
-
-// Public interface
-std::vector<const Point*> kNearestNeighbors(KDNode* root, const Dataset& data, const Point& query, int k) {
-    std::priority_queue<std::pair<double, const Point*>> maxHeap;
-    kNearestNeighborsRecursive(root, data, query, k, maxHeap);
-
-    std::vector<const Point*> result;
-    while (!maxHeap.empty()) {
-        result.push_back(maxHeap.top().second);
-        maxHeap.pop();
-    }
-    std::reverse(result.begin(), result.end());
-    return result;
-}
-
 // Generate same query points to use for benchmarking across methods
 std::vector<int> generateQueryIndices(const Dataset& data, int Q) {
     std::vector<int> queryIndices;
@@ -222,7 +174,8 @@ std::pair<double, std::vector<const Point*>> performSingleGlobalQuery(
     const Dataset& data, const Point& queryPoint, int k) {
     
     auto start = std::chrono::high_resolution_clock::now();
-    std::vector<const Point*> nearest = kNearestNeighbors(data.kdtree, data, queryPoint, k);
+    // Use the fully parallel implementation 
+    std::vector<const Point*> nearest = kNearestNeighborsParallelGlobal(data.kdtree, data, queryPoint, k);
     auto end = std::chrono::high_resolution_clock::now();
     
     double queryTime = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
@@ -534,12 +487,6 @@ int main(int argc, char** argv) {
         std::cout << "Performing " << Q << " random queries with k=" << k << " nearest neighbors" << std::endl;
 
         std::vector<int> queryIndices = generateQueryIndices(data, Q);
-    
-        // std::cout << "Query point coordinates: ";
-        // for (int d = 0; d < queryPoint.dimension; ++d) {
-        //     std::cout << queryPoint.coordinates[d] << " ";
-        // }
-        // std::cout << std::endl;
 
         // First perform queries using global kD tree
         std::cout << "\nRunning global kD-tree queries...\n";
@@ -550,34 +497,6 @@ int main(int argc, char** argv) {
         std::cout << "\nRunning clustered kD-tree queries with p=" << p << " clusters...\n";
         QueryStats clusterStats = performClusterQueries(clusters, data, k, p, queryIndices);
         printQueryStats(clusterStats, "Cluster kD-trees");
-
-        // start = std::chrono::high_resolution_clock::now();
-        // auto nearestPoints = parallelNearestNeighborQuery(
-        //     parlay::sequence<Cluster>(clusters.begin(), clusters.end()),
-        //     queryPoint, k, p);
-        // end = std::chrono::high_resolution_clock::now();
-        
-        // duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        
-        // std::cout << "Found " << nearestPoints.size() << " nearest neighbors in " 
-        //           << duration << " µs.\n";
-        
-        // // Print distances to nearest neighbors
-        // std::cout << "Distances to nearest neighbors:\n";
-        // for (size_t i = 0; i < nearestPoints.size(); ++i) {
-        //     double dist = 0.0;
-        //     for (int d = 0; d < queryPoint.dimension; ++d) {
-        //         double diff = queryPoint.coordinates[d] - nearestPoints[i]->coordinates[d];
-        //         dist += diff * diff;
-        //     }
-        //     dist = std::sqrt(dist);
-        //     std::cout << "  Neighbor " << i + 1 << ": distance=" << dist << std::endl;  // ", coords=(";
-            // for (int d = 0; d < nearestPoints[i]->dimension; ++d) {
-            //     std::cout << nearestPoints[i]->coordinates[d];
-            //     if (d < nearestPoints[i]->dimension - 1) std::cout << ", ";
-            // }
-            // std::cout << ")" << std::endl;
-        // }
 
         // Compare performance
         if (!globalStats.queryTimes.empty() && !clusterStats.queryTimes.empty()) {
