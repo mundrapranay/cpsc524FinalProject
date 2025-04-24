@@ -141,14 +141,32 @@ void updateClusterCentroids(std::vector<Cluster>& clusters) {
     });
 }
 
-// Compute squared Euclidean distance
-double squaredDistance(const Point& a, const Point& b) {
-    double dist = 0.0;
+// double squaredDistance(const Point& a, const Point& b) {
+//     double dist = 0.0;
+//     for (int i = 0; i < a.dimension; ++i) {
+//         double diff = a.coordinates[i] - b.coordinates[i];
+//         dist += diff * diff;
+//     }
+//     return dist;
+// }
+
+// Compute cosine distance
+double cosineDistance(const Point& a, const Point& b) {
+    double dot = 0.0, normA = 0.0, normB = 0.0;
+
     for (int i = 0; i < a.dimension; ++i) {
-        double diff = a.coordinates[i] - b.coordinates[i];
-        dist += diff * diff;
+        double x = a.coordinates[i];
+        double y = b.coordinates[i];
+        dot += x * y;
+        normA += x * x;
+        normB += y * y;
     }
-    return dist;
+
+    if (normA == 0.0 || normB == 0.0) {
+        return 1.0; // Completely dissimilar (or handle as special case)
+    }
+
+    return 1.0 - (dot / (std::sqrt(normA) * std::sqrt(normB)));
 }
 
 // Recursive kNN helper
@@ -158,7 +176,7 @@ void kNearestNeighborsRecursive(KDNode* node, const Dataset& data,
     if (!node) return;
 
     const Point& currentPoint = data.points[node->pointIndex];
-    double dist = squaredDistance(query, currentPoint);
+    double dist = cosineDistance(query, currentPoint);
 
     if (maxHeap.size() < static_cast<size_t>(k)) {
         maxHeap.emplace(dist, &currentPoint);
@@ -262,7 +280,7 @@ QueryStats performGlobalQueries(const Dataset& data, int k, const std::vector<in
         
         double nearestDist = std::numeric_limits<double>::infinity();
         if (!nearest.empty()) {
-            nearestDist = squaredDistance(queryPoint, *nearest[0]);
+            nearestDist = cosineDistance(queryPoint, *nearest[0]);
         }
         
         return QueryResult{queryTime, nearestDist, nearest.size()};
@@ -308,7 +326,7 @@ QueryStats performClusterQueries(const std::vector<Cluster>& clusters, const Dat
         
         double nearestDist = std::numeric_limits<double>::infinity();
         if (!nearest.empty()) {
-            nearestDist = squaredDistance(queryPoint, *nearest[0]);
+            nearestDist = cosineDistance(queryPoint, *nearest[0]);
         }
         
         return QueryResult{queryTime, nearestDist, nearest.size()};
