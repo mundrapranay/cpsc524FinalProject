@@ -134,12 +134,37 @@ void writeClusteredPointsToCSV(const std::string& filename,
                                 const Dataset& data,
                                 const parlay::sequence<int>& labels) {
     std::ofstream file(filename);
-    file << "x,y,cluster\n";
+    
+    // Find the maximum dimension across all points
+    int maxDim = 0;
+    for (int i = 0; i < data.n; ++i) {
+        maxDim = std::max(maxDim, data.points[i].dimension);
+    }
+    
+    // Write header with dimension labels
+    for (int d = 0; d < maxDim; ++d) {
+        file << "dim" << d;
+        if (d < maxDim - 1) file << ",";
+    }
+    file << ",cluster\n";
 
+    // Write data points with all dimensions and cluster label
     for (int i = 0; i < data.n; ++i) {
         const auto& point = data.points[i];
-        if (point.dimension < 2) continue; // skip if not 2D
-        file << point.coordinates[0] << "," << point.coordinates[1] << "," << labels[i] << "\n";
+        
+        // Write each coordinate
+        for (int d = 0; d < point.dimension; ++d) {
+            file << point.coordinates[d];
+            if (d < point.dimension - 1) file << ",";
+        }
+        
+        // Pad with zeros if this point has fewer dimensions than maxDim
+        for (int d = point.dimension; d < maxDim; ++d) {
+            file << ",0";
+        }
+        
+        // Write cluster label
+        file << "," << labels[i] << "\n";
     }
 
     file.close();

@@ -28,6 +28,91 @@ std::vector<const Point*> parallelNearestNeighborQuery(
     size_t K,
     size_t P);
 
+std::pair<std::vector<Cluster>, parlay::sequence<int>> loadClusteringFromCSV(
+    const Dataset& data, const std::string& filename) {
+    
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open cluster file: " << filename << std::endl;
+        return {{}, parlay::sequence<int>()};
+    }
+    
+    std::string header;
+    // Read header to determine dimensions
+    std::getline(file, header);
+    
+    // Count commas to determine number of columns
+    int commaCount = 0;
+    for (char c : header) {
+        if (c == ',') commaCount++;
+    }
+    
+    // The last column is the cluster, so numDimensions = commaCount
+    int numDimensions = commaCount;
+    
+    // Read cluster assignments
+    std::vector<int> clusterLabels;
+    clusterLabels.reserve(data.n);
+    
+    std::string line;
+    while (std::getline(file, line)) {
+        std::stringstream ss(line);
+        std::string cell;
+        
+        // Skip all dimension columns
+        for (int i = 0; i < numDimensions; i++) {
+            std::getline(ss, cell, ',');
+        }
+        
+        // The last column is the cluster
+        std::getline(ss, cell, ',');
+        
+        if (!cell.empty()) {
+            int label = std::stoi(cell);
+            clusterLabels.push_back(label);
+        }
+    }
+    
+    // Check if we read the correct number of labels
+    if (clusterLabels.size() != static_cast<size_t>(data.n)) {
+        std::cerr << "Error: Number of cluster labels (" << clusterLabels.size() 
+                  << ") doesn't match number of data points (" << data.n << ")" << std::endl;
+        return {{}, parlay::sequence<int>()};
+    }
+    
+    // Convert to parlay sequence
+    parlay::sequence<int> labels(clusterLabels.begin(), clusterLabels.end());
+    
+    // Find the maximum cluster ID to determine number of clusters
+    int maxClusterID = -1;
+    for (int label : clusterLabels) {
+        if (label > maxClusterID) maxClusterID = label;
+    }
+    
+    // Create clusters
+    int numClusters = maxClusterID + 1;
+    std::vector<Cluster> clusters(numClusters);
+    
+    // Initialize clusters with empty points
+    for (int i = 0; i < numClusters; ++i) {
+        clusters[i].points.n = 0;
+        clusters[i].points.kdtree = nullptr;
+    }
+    
+    // Assign points to clusters
+    for (int i = 0; i < data.n; ++i) {
+        int label = labels[i];
+        if (label >= 0 && label < numClusters) {
+            clusters[label].points.points.push_back(data.points[i]);
+            clusters[label].points.n++;
+        }
+    }
+    
+    std::cout << "Loaded " << numClusters << " clusters from " << filename << std::endl;
+    
+    return {clusters, labels};
+}
+
 // Function to compute centroid for a dataset
 Point computeCentroid(const Dataset& dataset) {
     Point centroid;
@@ -258,12 +343,14 @@ int main(int argc, char** argv) {
     // Default parameters
     std::string inputFilename;  // = "example_data/rnaseq_sample50d_1000_cells.csv";
     std::string outputFilename;  // = "example_data/rnaseq_sample50d_1000_cells_clustered.csv";
+    std::string clusterFilename; // file with existing clustering results
     double eps = 0.2; // default
     int minNeighbors = 10; // minimum number of points to be considered a core point in DBSCAN
     bool buildTrees = true; // Whether to build kD-trees
     int k = 5; // Number of global neighbors to find / query point
     int p = 2; // Number of cluster trees to consider (via distance to root)
     int Q = 1; // Number of queries to perform
+    bool useExistingClustering = false; // Whether to use existing clustering
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -271,6 +358,11 @@ int main(int argc, char** argv) {
             if (i + 1 < argc) inputFilename = argv[++i];
         } else if (arg == "--output" || arg == "-o") {
             if (i + 1 < argc) outputFilename = argv[++i];
+        } else if (arg == "--cluster-file" || arg == "-c") {
+            if (i + 1 < argc) {
+                clusterFilename = argv[++i];
+                useExistingClustering = true;
+            }
         } else if (arg == "--eps" || arg == "-e") {
             if (i + 1 < argc) eps = std::stod(argv[++i]);
         } else if (arg == "--min-pts" || arg == "-m") {
@@ -288,6 +380,7 @@ int main(int argc, char** argv) {
                     << "Options:\n"
                     << "  -i, --input FILE          Input CSV file (default: " << inputFilename << ")\n"
                     << "  -o, --output FILE         Output CSV file (default: " << outputFilename << ")\n"
+                    << "  -c, --cluster-file FILE   File with existing clustering results\n"
                     << "  -e, --eps VALUE           DBSCAN epsilon value (default: " << eps << ")\n"
                     << "  -m, --min-pts VALUE       DBSCAN minimum points (default: " << minNeighbors << ")\n"
                     << "  -k, --k-neighbors VALUE   Number of nearest neighbors to find (default: " << k << ")\n"
@@ -355,73 +448,49 @@ int main(int argc, char** argv) {
 
 
 
-    // CHECK BELOW -- INTEGRATED QUERYING TOGETHER
-    // if (buildTrees && data.n > 0) {
-    //     // Use a random point for the query
-    //     std::random_device rd;
-    //     std::mt19937 gen(rd());
-    //     std::uniform_int_distribution<> dis(0, data.n - 1);
-    //     int randomIdx = dis(gen);
-        
-    //     const Point& queryPoint = data.points[randomIdx];
-
-    //     // std::cout << "\nQuery point coordinates (global kD-tree): ";
-    //     // for (int d = 0; d < queryPoint.dimension; ++d) {
-    //     //     std::cout << queryPoint.coordinates[d] << " ";
-    //     // }
-    //     // std::cout << std::endl;
-
-    //     // Run nearest neighbor query on global tree
-    //     std::cout << "\nPerforming " << k << "-nearest neighbor query using global kD-tree...\n";
-
-    //     start = std::chrono::high_resolution_clock::now();
-    //     std::vector<const Point*> globalNearest = kNearestNeighbors(data.kdtree, data, queryPoint, k);
-
-    //     end = std::chrono::high_resolution_clock::now();
-        
-    //     duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    //     std::cout << "Global KD-Tree query found " << globalNearest.size() 
-    //             << " nearest neighbors in " << duration << " µs.\n";
-
-    //     std::cout << "Distances to global nearest neighbors:\n";
-    //     for (size_t i = 0; i < globalNearest.size(); ++i) {
-    //         double dist = 0.0;
-    //         for (int d = 0; d < queryPoint.dimension; ++d) {
-    //             double diff = queryPoint.coordinates[d] - globalNearest[i]->coordinates[d];
-    //             dist += diff * diff;
-    //         }
-    //         dist = std::sqrt(dist);
-    //         std::cout << "  Neighbor " << i + 1 << ": distance=" << dist << std::endl;  // ", coords=(";
-    //         // for (int d = 0; d < globalNearest[i]->dimension; ++d) {
-    //         //     std::cout << globalNearest[i]->coordinates[d];
-    //         //     if (d < globalNearest[i]->dimension - 1) std::cout << ", ";
-    //         // }
-    //         // std::cout << ")\n";
-    //     }
-    // }
-
-
-
-    // Our Algorithm Phase 1: Run DBSCAN clustering
-    std::cout << "--------------------------------------" << std::endl;
-    std::cout << "Running parallel DBSCAN with eps = " << eps
-              << " and minNeighbors = " << minNeighbors << ".\n";
+    // Our Algorithm Phase 1: Run DBSCAN clustering or load existing clusters
+    std::vector<Cluster> clusters;
+    parlay::sequence<int> labels;
     
-    start = std::chrono::high_resolution_clock::now();
-    auto [clusters, labels] = parallelDBSCAN(data, eps, minNeighbors);
-    end = std::chrono::high_resolution_clock::now();
-    duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-    
-    std::cout << "Clustered into " << clusters.size() << " clusters in " << duration << " ms.\n";
+    if (useExistingClustering && !clusterFilename.empty()) {
+        std::cout << "--------------------------------------" << std::endl;
+        std::cout << "Loading existing clustering from " << clusterFilename << std::endl;
+        
+        start = std::chrono::high_resolution_clock::now();
+        std::tie(clusters, labels) = loadClusteringFromCSV(data, clusterFilename);
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        
+        std::cout << "Loaded " << clusters.size() << " clusters in " << duration << " ms.\n";
+    } else {
+        std::cout << "--------------------------------------" << std::endl;
+        std::cout << "Running parallel DBSCAN with eps = " << eps
+                << " and minNeighbors = " << minNeighbors << ".\n";
+        
+        start = std::chrono::high_resolution_clock::now();
+        std::tie(clusters, labels) = parallelDBSCAN(data, eps, minNeighbors);
+        end = std::chrono::high_resolution_clock::now();
+        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+        
+        std::cout << "Clustered into " << clusters.size() << " clusters in " << duration << " ms.\n";
+        
+        // Write clustered points to CSV
+        writeClusteredPointsToCSV(outputFilename, data, labels);
+        std::cout << "Wrote clustered points to " << outputFilename << ".\n";
+    }
     
     // Print cluster statistics
     for (size_t i = 0; i < clusters.size(); ++i) {
         std::cout << "Cluster " << i << ": " << clusters[i].points.n << " points\n";
     }
 
-    std::cout << "--------------------------------------" << std::endl;
-    std::cout << "Testing Cluster KD Tree Algorithm" << std::endl;
+    // Skip query process if we have no clusters
+    if (clusters.empty()) {
+        std::cerr << "No clusters found. Exiting.\n";
+        return 1;
+    }
 
+    std::cout << "--------------------------------------" << std::endl;
     // Update cluster centroids
     updateClusterCentroids(clusters);
     
@@ -429,6 +498,7 @@ int main(int argc, char** argv) {
 
     // Our Algorithm Phase 2: Build kD-trees for each cluster
     if (buildTrees) {
+        std::cout << "Testing Cluster KD Tree Algorithm" << std::endl;
         start = std::chrono::high_resolution_clock::now();
         buildClusterKDTrees(clusters);
         end = std::chrono::high_resolution_clock::now();
@@ -439,9 +509,10 @@ int main(int argc, char** argv) {
     
     // Write clustered points to CSV
     // outputFilename --> include both eps and min_pts
-    writeClusteredPointsToCSV(outputFilename, data, labels);
-    std::cout << "Wrote clustered points to " << outputFilename << ".\n";
-
+    if (!useExistingClustering) {
+        writeClusteredPointsToCSV(outputFilename, data, labels);
+        std::cout << "Wrote clustered points to " << outputFilename << ".\n";
+    }
 
     
     // Our Algorithm Phase 3: Example of nearest-neighbor query
@@ -451,13 +522,6 @@ int main(int argc, char** argv) {
     if (buildTrees && !clusters.empty() && data.n > 0) {
         std::cout << "--------------------------------------" << std::endl;
         std::cout << "Performing " << Q << " random queries with k=" << k << " nearest neighbors" << std::endl;
-        // Use a random point for the query
-        // std::random_device rd;
-        // std::mt19937 gen(rd());
-        // std::uniform_int_distribution<> dis(0, data.n - 1);
-        // int randomIdx = dis(gen);
-        
-        // const Point& queryPoint = data.points[randomIdx];
 
         std::vector<int> queryIndices = generateQueryIndices(data, Q);
     
