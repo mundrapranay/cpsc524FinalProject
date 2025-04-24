@@ -1,4 +1,6 @@
 #include "src/datastructures.h"
+#include "src/distance_metrics.h"
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -42,22 +44,13 @@ Dataset readCSV(const std::string& filename) {
     return dataset;
 }
 
-double distance(const Point& a, const Point& b) {
-    double sum = 0;
-    for (int i = 0; i < a.dimension; ++i) {
-        double diff = a.coordinates[i] - b.coordinates[i];
-        sum += diff * diff;
-    }
-    return std::sqrt(sum);
-}
-
 // Find neighbors within eps radius
 parlay::sequence<int> regionQuery(const Dataset& data, int index, double eps) {
     const Point& point = data.points[index];
     return parlay::filter(
         parlay::iota<int>(data.n),
         [&](int j) {
-            return distance(point, data.points[j]) <= eps;
+            return cosineDistance(point, data.points[j]) <= eps;
         }
     );
 }

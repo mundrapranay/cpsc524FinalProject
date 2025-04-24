@@ -1,5 +1,7 @@
 #include "src/datastructures.h"
 #include "src/parallel_kdtree.h"
+#include "src/distance_metrics.h"
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -149,25 +151,6 @@ void updateClusterCentroids(std::vector<Cluster>& clusters) {
 //     }
 //     return dist;
 // }
-
-// Compute cosine distance
-double cosineDistance(const Point& a, const Point& b) {
-    double dot = 0.0, normA = 0.0, normB = 0.0;
-
-    for (int i = 0; i < a.dimension; ++i) {
-        double x = a.coordinates[i];
-        double y = b.coordinates[i];
-        dot += x * y;
-        normA += x * x;
-        normB += y * y;
-    }
-
-    if (normA == 0.0 || normB == 0.0) {
-        return 1.0; // Completely dissimilar (or handle as special case)
-    }
-
-    return 1.0 - (dot / (std::sqrt(normA) * std::sqrt(normB)));
-}
 
 // Recursive kNN helper
 void kNearestNeighborsRecursive(KDNode* node, const Dataset& data,

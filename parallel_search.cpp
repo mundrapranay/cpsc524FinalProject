@@ -1,4 +1,6 @@
 #include "src/datastructures.h"
+#include "src/distance_metrics.h"
+
 #include <vector>
 #include <queue>
 #include <mutex>
@@ -18,17 +20,6 @@ struct NeighborCompare {
     return a.dist < b.dist;
   }  
 };
-
-
-static double sqDist(const Point &a, const Point &b) {
-    double d = 0;
-    for (int i = 0; i < a.dimension; ++i) {
-        double diff = a.coordinates[i] - b.coordinates[i];
-        d += diff * diff;
-    }
-    return d;
-}
-
 
 class ConcurrentMaxHeap {
     std::priority_queue<Neighbor, std::vector<Neighbor>, NeighborCompare> heap;
@@ -110,7 +101,7 @@ void searchKDTree(KDNode* node, const Dataset &ds, const Point &query, Concurren
 
     if (!node) return;
     const Point &p = ds.points[node->pointIndex];
-    double d = sqDist(p, query);
+    double d = cosineDistance(p, query);
     globalHeap.pushCandidate({d, &p});
 
     int axis = node->axis;
@@ -154,7 +145,7 @@ std::vector<const Point*> parallelNearestNeighborQuery(
       KDNode *root = clusters[i].points.kdtree;
       if (!root) return std::make_pair(std::numeric_limits<double>::infinity(), i);
       const Point &rp = clusters[i].points.points[root->pointIndex];
-      return std::make_pair(sqDist(rp, query), i);
+      return std::make_pair(cosineDistance(rp, query), i);
     });
 
     // 2) Filter out empty clusters
