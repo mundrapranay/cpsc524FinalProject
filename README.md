@@ -101,6 +101,19 @@ public:
   std::vector<Cluster> clusterData(const Dataset& data, int k);
   ```
 
+
+Quickstart instructions:
+1. To run parallel DBSCAN example, run:
+  ```bash
+  g++ -std=c++20 -Iinclude parallel_dbscan.cpp -o parallel_dbscan
+  ./parallel_dbscan
+  ```
+
+2. Plot clustering results
+  ```python
+  python plot_clustering_results.py
+  ```
+
 ---
 
 ### 2. Tree Construction Module
@@ -165,7 +178,7 @@ public:
 
 ### Phase 1: Prototyping
 
-- [ ] Implement basic clustering algorithm.
+- [x] Implement basic clustering algorithm.
 - [ ] Create KDTree class with build and sequential query.
 - [ ] Write utilities for Euclidean distance and point operations.
 
